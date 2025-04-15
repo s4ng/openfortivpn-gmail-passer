@@ -35,6 +35,9 @@ trusted-cert = 신뢰하는 인증서
 - [OAuth 동의화면 구설](https://developers.google.com/workspace/gmail/api/quickstart/go?hl=ko#configure_the_oauth_consent_screen)
 - [데스크톱 애플리케이션의 사용자 인증 정보 승인](https://developers.google.com/workspace/gmail/api/quickstart/go?hl=ko#authorize_credentials_for_a_desktop_application)
 
+> [!TIP]
+> 메일이 확인 후 읽음 상태로 바꾸고 싶다면, Google 인증 플랫폼의 `데이터 액세스`에서 `/auth/gmail.modify`권한을 부여하면 된다.
+
 설정을 완료한 후 credentials.json 파일을 다운로드 하여 `~/.config/gvpn/` 아래에 저장
 
 ### 4. gvpn 실행
