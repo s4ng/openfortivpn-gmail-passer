@@ -234,12 +234,14 @@ func main() {
 				}
 			}
 
-			lastMsgDateTime, err := time.Parse(time.RFC1123Z, lastMsgDate)
+			const timeFormat = "Mon, 2 Jan 2006 15:04:05 -0700"
+
+			lastMsgDateTime, err := time.Parse(timeFormat, lastMsgDate)
 			if err != nil {
 				fmt.Println("Error parsing time:", err)
 				return
 			}
-			dateTime, err := time.Parse(time.RFC1123Z, date)
+			dateTime, err := time.Parse(timeFormat, date)
 			if err != nil {
 				fmt.Println("Error parsing time:", err)
 				return
