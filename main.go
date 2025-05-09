@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/oauth2/google"
+	"google.golang.org/api/option"
 	"io"
 	"log"
 	"net/http"
@@ -15,9 +17,7 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
-	"google.golang.org/api/option"
 )
 
 var basePath string
@@ -123,15 +123,15 @@ func changeMailIntoReadState(srv *gmail.Service, user string, messageId string) 
 
 	_, err := srv.Users.Messages.Modify(user, messageId, req).Do()
 	if err == nil {
-		fmt.Printf("✉️Message %s marked as read.\n", messageId)
+		fmt.Printf("✉️ Message %s marked as read.\n", messageId)
 	} else {
-		fmt.Printf("❌Message %s marked as read failed.\n%s\n", messageId, err)
+		fmt.Printf("❌ Message %s marked as read failed.\n%s\n", messageId, err)
 	}
 }
 
-func main() {
+func getGmailService() (*gmail.Service, error) {
 	ctx := context.Background()
-	createDirectory(basePath)
+	_ = createDirectory(basePath)
 
 	b, err := os.ReadFile(basePath + "credentials.json")
 	if err != nil {
@@ -145,9 +145,98 @@ func main() {
 	}
 	client := getClient(config)
 
-	srv, err := gmail.NewService(ctx, option.WithHTTPClient(client))
+	return gmail.NewService(ctx, option.WithHTTPClient(client))
+}
+
+func parseDate(dateStr string) (time.Time, error) {
+	// 두 가지 형식을 정의
+	layout1 := "Mon, 2 Jan 2006 15:04:05 -0700"
+	layout2 := "Mon, 10 Jan 2006 15:04:05 -0700"
+	layout3 := "Mon, 02 Jan 2006 15:04:05 -0700 (MST)"
+
+	// 첫 번째 형식 시도
+	t, err := time.Parse(layout1, dateStr)
+	if err == nil {
+		return t, nil
+	}
+
+	// 첫 번째 형식에서 실패하면 두 번째 형식 시도
+	t, err = time.Parse(layout2, dateStr)
+	if err == nil {
+		return t, nil
+	}
+
+	// 두 번째 형식에서 실패하면 세 번째 형식 시도
+	t, err = time.Parse(layout3, dateStr)
+	if err == nil {
+		return t, nil
+	}
+
+	// 두 형식 모두 실패한 경우 에러 반환
+	return time.Time{}, fmt.Errorf("unable to parse date")
+}
+
+func waitEmailAndVerify(srv *gmail.Service, user string, lastMsgDate string) (messageId string, authCode string, err error) {
+	// 10회 실행
+	for i := 0; i < 10; i++ {
+		// 최근 이메일 5개 조회
+		msgList, err := srv.Users.Messages.List(user).MaxResults(3).LabelIds("INBOX").Do()
+		if err != nil {
+			log.Fatalf("Unable to retrieve messages: %v", err)
+		}
+
+		if len(msgList.Messages) == 0 {
+			fmt.Println("No messages found.")
+			return "", "", err
+		}
+
+		for _, m := range msgList.Messages {
+			msg, err := srv.Users.Messages.Get(user, m.Id).Format("metadata").MetadataHeaders("Subject", "Date").Do()
+			if err != nil {
+				log.Printf("Unable to get message %s: %v", m.Id, err)
+				continue
+			}
+
+			subject := "N/A"
+			date := "N/A"
+			for _, header := range msg.Payload.Headers {
+				switch header.Name {
+				case "Subject":
+					subject = header.Value
+				case "Date":
+					date = header.Value
+				}
+			}
+
+			lastMsgDateTime, err := parseDate(lastMsgDate)
+			if err != nil {
+				fmt.Println("Error parsing time:", err)
+				return "", "", err
+			}
+			dateTime, err := parseDate(date)
+			if err != nil {
+				fmt.Println("Error parsing time:", err)
+				return "", "", err
+			}
+			if dateTime.Equal(lastMsgDateTime) || dateTime.Before(lastMsgDateTime) {
+				continue
+			}
+
+			if strings.Contains(subject, "AuthCode") {
+
+				// Auth code 반환
+				return m.Id, subject[10:16], nil
+			}
+		}
+		time.Sleep(time.Duration(1) * time.Second)
+	}
+	return "", "", fmt.Errorf("email verification timeout")
+}
+
+func connectVpnWithEmailVerification() {
+	srv, err := getGmailService()
 	if err != nil {
-		log.Fatalf("Unable to retrieve Gmail client: %v", err)
+		log.Fatalf("Unable to get Gmail service: %v", err)
 	}
 
 	user := "me"
@@ -203,77 +292,32 @@ func main() {
 
 	fmt.Println("⏳ Waiting for email verification...")
 
-	// 10회 실행
-	for i := 0; i < 10; i++ {
-		// 최근 이메일 5개 조회
-		msgList, err := srv.Users.Messages.List(user).MaxResults(3).LabelIds("INBOX").Do()
-		if err != nil {
-			log.Fatalf("Unable to retrieve messages: %v", err)
-		}
-
-		if len(msgList.Messages) == 0 {
-			fmt.Println("No messages found.")
-			return
-		}
-
-		for _, m := range msgList.Messages {
-			msg, err := srv.Users.Messages.Get(user, m.Id).Format("metadata").MetadataHeaders("Subject", "Date").Do()
-			if err != nil {
-				log.Printf("Unable to get message %s: %v", m.Id, err)
-				continue
-			}
-
-			subject := "N/A"
-			date := "N/A"
-			for _, header := range msg.Payload.Headers {
-				switch header.Name {
-				case "Subject":
-					subject = header.Value
-				case "Date":
-					date = header.Value
-				}
-			}
-
-			const timeFormat = "Mon, 2 Jan 2006 15:04:05 -0700"
-
-			lastMsgDateTime, err := time.Parse(timeFormat, lastMsgDate)
-			if err != nil {
-				fmt.Println("Error parsing time:", err)
-				return
-			}
-			dateTime, err := time.Parse(timeFormat, date)
-			if err != nil {
-				fmt.Println("Error parsing time:", err)
-				return
-			}
-			if dateTime.Equal(lastMsgDateTime) || dateTime.Before(lastMsgDateTime) {
-				continue
-			}
-
-			if strings.Contains(subject, "AuthCode") {
-
-				changeMailIntoReadState(srv, user, m.Id)
-
-				code := subject[10:16]
-				fmt.Println("code : ", code)
-				fmt.Println("✅ Email verification complete.")
-				go func() {
-					defer stdin.Close()
-					io.WriteString(stdin, code+"\n")
-				}()
-				// stdout/stderr 읽기
-				go io.Copy(os.Stdout, stdoutPipe)
-				go io.Copy(os.Stderr, stderrPipe)
-
-				if err := cmd.Wait(); err != nil {
-					log.Printf("VPN process exited with error: %v", err)
-				} else {
-					fmt.Println("✅ VPN process complete.")
-				}
-
-				return
-			}
-		}
-		time.Sleep(time.Duration(1) * time.Second)
+	messageId, authCode, err := waitEmailAndVerify(srv, user, lastMsgDate)
+	if err != nil {
+		log.Printf("Email verification timeout: %v", err)
+		return
 	}
+	changeMailIntoReadState(srv, user, messageId)
+
+	fmt.Println("code : ", authCode)
+	fmt.Println("✅ Email verification complete.")
+	go func() {
+		defer stdin.Close()
+		io.WriteString(stdin, authCode+"\n")
+	}()
+	// stdout/stderr 읽기
+	go io.Copy(os.Stdout, stdoutPipe)
+	go io.Copy(os.Stderr, stderrPipe)
+
+	if err := cmd.Wait(); err != nil {
+		log.Printf("VPN process exited with error: %v", err)
+	} else {
+		fmt.Println("✅ VPN process complete.")
+	}
+
+	return
+}
+
+func main() {
+	connectVpnWithEmailVerification()
 }
