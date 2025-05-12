@@ -98,6 +98,16 @@ func saveToken(path string, token *oauth2.Token) {
 	json.NewEncoder(f).Encode(token)
 }
 
+func removeTokenFile() {
+	tokFile := "token.json"
+	tokPath := basePath + tokFile
+	err := os.Remove(tokPath)
+	if err != nil {
+		log.Fatalf("Unable to remove token file: %v", err)
+		return
+	}
+}
+
 func createDirectory(path string) error {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -245,6 +255,16 @@ func connectVpnWithEmailVerification() {
 	lastMsgList, err := srv.Users.Messages.List(user).MaxResults(1).LabelIds("INBOX").Do()
 	lastMsgDate := "N/A"
 
+	if err != nil {
+		if strings.Contains(err.Error(), "invalid_grant") {
+			removeTokenFile()
+			log.Fatalf("Please try again.")
+			return
+		}
+		log.Fatalf("Unable to retrieve messages: %v", err)
+		return
+	}
+
 	for _, m := range lastMsgList.Messages {
 		msg, err := srv.Users.Messages.Get(user, m.Id).Format("metadata").MetadataHeaders("Date").Do()
 		if err != nil {
@@ -277,6 +297,9 @@ func connectVpnWithEmailVerification() {
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("Failed to start command: %v", err)
 	}
+	// stdout/stderr 읽기
+	go io.Copy(os.Stdout, stdoutPipe)
+	go io.Copy(os.Stderr, stderrPipe)
 
 	// 시그널 처리
 	sigs := make(chan os.Signal, 1)
@@ -305,9 +328,6 @@ func connectVpnWithEmailVerification() {
 		defer stdin.Close()
 		io.WriteString(stdin, authCode+"\n")
 	}()
-	// stdout/stderr 읽기
-	go io.Copy(os.Stdout, stdoutPipe)
-	go io.Copy(os.Stderr, stderrPipe)
 
 	if err := cmd.Wait(); err != nil {
 		log.Printf("VPN process exited with error: %v", err)
