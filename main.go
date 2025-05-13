@@ -159,30 +159,22 @@ func getGmailService() (*gmail.Service, error) {
 }
 
 func parseDate(dateStr string) (time.Time, error) {
-	// 두 가지 형식을 정의
-	layout1 := "Mon, 2 Jan 2006 15:04:05 -0700"
-	layout2 := "Mon, 10 Jan 2006 15:04:05 -0700"
-	layout3 := "Mon, 02 Jan 2006 15:04:05 -0700 (MST)"
-
-	// 첫 번째 형식 시도
-	t, err := time.Parse(layout1, dateStr)
-	if err == nil {
-		return t, nil
+	// 날짜 레이아웃 추가
+	layouts := []string{
+		"Mon, 2 Jan 2006 15:04:05",
+		"Mon, 2 Jan 2006 15:04:05 -0700",
+		"Mon, 2 Jan 2006 15:04:05 GMT",
+		"Mon, 2 Jan 2006 15:04:05 -0700 (MST)",
 	}
-
-	// 첫 번째 형식에서 실패하면 두 번째 형식 시도
-	t, err = time.Parse(layout2, dateStr)
-	if err == nil {
-		return t, nil
+	// 순회하면서 검사
+	for _, layout := range layouts {
+		t, err := time.Parse(layout, dateStr)
+		if err == nil {
+			return t, nil
+		}
 	}
-
-	// 두 번째 형식에서 실패하면 세 번째 형식 시도
-	t, err = time.Parse(layout3, dateStr)
-	if err == nil {
-		return t, nil
-	}
-
-	// 두 형식 모두 실패한 경우 에러 반환
+	// 모든 형식에 대해 실패한 경우 에러 반환
+	log.Println("date : " + dateStr)
 	return time.Time{}, fmt.Errorf("unable to parse date")
 }
 
@@ -317,7 +309,7 @@ func connectVpnWithEmailVerification() {
 
 	messageId, authCode, err := waitEmailAndVerify(srv, user, lastMsgDate)
 	if err != nil {
-		log.Printf("Email verification timeout: %v", err)
+		log.Printf("Email verification failed: %v", err)
 		return
 	}
 	changeMailIntoReadState(srv, user, messageId)
