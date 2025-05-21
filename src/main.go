@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
@@ -47,95 +46,30 @@ func getClient(config *oauth2.Config) *http.Client {
 	// The file token.json stores the user's access and refresh tokens, and is
 	// created automatically when the authorization flow completes for the first
 	// time.
-	tokFile := "token.json"
-	tokPath := basePath + tokFile
-	tok, err := tokenFromFile(tokPath)
+	tokenFile := "token.json"
+	tokenPath := basePath + tokenFile
+	tok, err := tokenFromFile(tokenPath)
 	if err != nil {
-		tok = getTokenFromWeb(config)
-		saveToken(tokPath, tok)
+		saveTokenFromWeb(config, tokenPath)
+		tok, err = tokenFromFile(tokenPath)
 	}
 	return config.Client(context.Background(), tok)
 }
 
 // Request a token from the web, then returns the retrieved token.
-func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
+func saveTokenFromWeb(config *oauth2.Config, tokenPath string) {
 	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-	fmt.Printf("Go to the following link in your browser then type the "+
-		"authorization code: \n%v\n", authURL)
-
-	var authCode string
-	if _, err := fmt.Scan(&authCode); err != nil {
-		log.Fatalf("Unable to read authorization code: %v", err)
-	}
-
-	tok, err := config.Exchange(context.TODO(), authCode)
-	if err != nil {
-		log.Fatalf("Unable to retrieve token from web: %v", err)
-	}
-	return tok
+	fmt.Printf("🔐 OAuth 토큰이 필요합니다. 아래 링크에 접속해주세요."+
+		"\n%v\n", authURL)
+	openServerAndSaveToken(config, tokenPath)
 }
 
-// Retrieves a token from a local file.
-func tokenFromFile(file string) (*oauth2.Token, error) {
-	f, err := os.Open(file)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	tok := &oauth2.Token{}
-	err = json.NewDecoder(f).Decode(tok)
-	return tok, err
-}
-
-// Saves a token to a file path.
-func saveToken(path string, token *oauth2.Token) {
-	fmt.Printf("Saving credential file to: %s\n", path)
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
-		log.Fatalf("Unable to cache oauth token: %v", err)
-	}
-	defer f.Close()
-	json.NewEncoder(f).Encode(token)
-}
-
-func removeTokenFile() {
-	tokFile := "token.json"
-	tokPath := basePath + tokFile
-	err := os.Remove(tokPath)
-	if err != nil {
-		log.Fatalf("Unable to remove token file: %v", err)
-		return
-	}
-}
-
-func createDirectory(path string) error {
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		// 디렉토리가 없으면 생성
-		err := os.MkdirAll(path, 0755)
-		if err != nil {
-			return fmt.Errorf("디렉토리 생성 실패: %w", err)
-		}
-		fmt.Println("📁 디렉토리를 생성했습니다:", path)
-	} else if err != nil {
-		return fmt.Errorf("디렉토리 확인 중 오류 발생: %w", err)
-	} else if !info.IsDir() {
-		return fmt.Errorf("해당 경로는 디렉토리가 아닙니다: %s", path)
-	}
-	return nil
-}
-
-func changeMailIntoReadState(srv *gmail.Service, user string, messageId string) {
-	// UNREAD 라벨 제거 요청 생성
-	req := &gmail.ModifyMessageRequest{
-		RemoveLabelIds: []string{"UNREAD"},
-	}
-
-	_, err := srv.Users.Messages.Modify(user, messageId, req).Do()
+func removeReadMail(srv *gmail.Service, user string, messageId string) {
+	_, err := srv.Users.Messages.Trash(user, messageId).Do()
 	if err == nil {
-		fmt.Printf("✉️ Message %s marked as read.\n", messageId)
+		fmt.Printf("✉️ Message %s removed.\n", messageId)
 	} else {
-		fmt.Printf("❌ Message %s marked as read failed.\n%s\n", messageId, err)
+		fmt.Printf("❌ Message %s remove failed.\n%s\n", messageId, err)
 	}
 }
 
@@ -156,26 +90,6 @@ func getGmailService() (*gmail.Service, error) {
 	client := getClient(config)
 
 	return gmail.NewService(ctx, option.WithHTTPClient(client))
-}
-
-func parseDate(dateStr string) (time.Time, error) {
-	// 날짜 레이아웃 추가
-	layouts := []string{
-		"Mon, 2 Jan 2006 15:04:05",
-		"Mon, 2 Jan 2006 15:04:05 -0700",
-		"Mon, 2 Jan 2006 15:04:05 GMT",
-		"Mon, 2 Jan 2006 15:04:05 -0700 (MST)",
-	}
-	// 순회하면서 검사
-	for _, layout := range layouts {
-		t, err := time.Parse(layout, dateStr)
-		if err == nil {
-			return t, nil
-		}
-	}
-	// 모든 형식에 대해 실패한 경우 에러 반환
-	log.Println("date : " + dateStr)
-	return time.Time{}, fmt.Errorf("unable to parse date")
 }
 
 func waitEmailAndVerify(srv *gmail.Service, user string, lastMsgDate string) (messageId string, authCode string, err error) {
@@ -250,7 +164,7 @@ func connectVpnWithEmailVerification() {
 	if err != nil {
 		if strings.Contains(err.Error(), "invalid_grant") {
 			removeTokenFile()
-			log.Fatalf("Please try again.")
+			log.Fatalf("🚫 OAuth 토큰이 만료되었습니다. 다시 시도해주세요.")
 			return
 		}
 		log.Fatalf("Unable to retrieve messages: %v", err)
@@ -312,7 +226,7 @@ func connectVpnWithEmailVerification() {
 		log.Printf("Email verification failed: %v", err)
 		return
 	}
-	changeMailIntoReadState(srv, user, messageId)
+	removeReadMail(srv, user, messageId)
 
 	fmt.Println("code : ", authCode)
 	fmt.Println("✅ Email verification complete.")

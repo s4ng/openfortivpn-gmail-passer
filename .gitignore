@@ -1,6 +1,6 @@
 ### binary
 gvpn
-gvpn-py
+src/gvpn-py
 
 ### IntelliJ IDEA ###
 .idea
