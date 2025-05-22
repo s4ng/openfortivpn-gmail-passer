@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"golang.org/x/oauth2"
 	"log"
 	"net/http"
+	"sync"
 )
 
-func openServerAndSaveToken(config *oauth2.Config, tokenPath string) {
+func openServerAndSaveToken(wg *sync.WaitGroup, config *oauth2.Config, tokenPath string) *http.Server {
+
+	srv := &http.Server{Addr: ":80"}
+
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
 		authCode := r.FormValue("code")
 		if authCode == "" {
@@ -23,10 +26,26 @@ func openServerAndSaveToken(config *oauth2.Config, tokenPath string) {
 			log.Fatalf("Unable to retrieve token from web: %v", err)
 		}
 		saveToken(tokenPath, token)
-		fmt.Println("✅ 토큰 저장에 성공하였습니다. 프로그램을 종료하고 다시 시작해주세요.")
 	})
-	err := http.ListenAndServe(":80", nil)
-	if err != nil {
-		return
+
+	go func() {
+		defer wg.Done() // let main know we are done cleaning up
+
+		// always returns error. ErrServerClosed on graceful close
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+			// unexpected error. port in use?
+			log.Fatalf("ListenAndServe(): %v", err)
+		}
+	}()
+
+	return srv
+}
+
+func closeServer(srv *http.Server, wg *sync.WaitGroup) {
+
+	if err := srv.Shutdown(context.TODO()); err != nil {
+		panic(err)
 	}
+
+	wg.Wait()
 }

@@ -36,7 +36,7 @@ trusted-cert = 신뢰하는 인증서
 - [데스크톱 애플리케이션의 사용자 인증 정보 승인](https://developers.google.com/workspace/gmail/api/quickstart/go?hl=ko#authorize_credentials_for_a_desktop_application)
 
 > [!TIP]
-> 메일이 확인 후 읽음 상태로 바꾸고 싶다면, Google 인증 플랫폼의 `데이터 액세스`에서 `/auth/gmail.modify`권한을 부여하면 된다.
+> 메일 확인 후 제거하고 싶다면, Google 인증 플랫폼의 `데이터 액세스`에서 `/auth/gmail.modify`권한을 부여하면 된다.
 
 설정을 완료한 후 credentials.json 파일을 다운로드 하여 `~/.config/gvpn/` 아래에 저장
 
@@ -52,9 +52,9 @@ sudo gvpn
 
 ### 5. Gmail OAuth 인증 후 Token 생성
 
-실행을 하면 나오는 URL에 접속하여 Gmail 권한을 승인해준다.
+실행 하면 나오는 URL에 접속하여 Gmail 권한을 승인해준다.
 
-승인 후 redirect가 localhost로 되어있으므로 웹 페이지가 나타나지 않을텐데, 이 떼 redirect URL의 Query parameter 중 code 부분을 복사하여 터미널에 붙여넣기 한다.
+승인 후 웹 화면에 `Success!!`가 나타났다면 `gvpn`을 종료 후 재시작한다
 
 ### 6. 완료
 

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -50,18 +51,30 @@ func getClient(config *oauth2.Config) *http.Client {
 	tokenPath := basePath + tokenFile
 	tok, err := tokenFromFile(tokenPath)
 	if err != nil {
-		saveTokenFromWeb(config, tokenPath)
+
+		httpServerExitDone := &sync.WaitGroup{}
+		httpServerExitDone.Add(1)
+
+		srv := saveTokenFromWeb(httpServerExitDone, config, tokenPath)
+		// 1분간 OAuth 인증 대기
+		for i := 0; i < 60; i++ {
+			if tmpTok, _ := tokenFromFile(tokenPath); tmpTok != nil {
+				break
+			}
+			time.Sleep(time.Duration(1) * time.Second)
+		}
 		tok, err = tokenFromFile(tokenPath)
+		closeServer(srv, httpServerExitDone)
 	}
 	return config.Client(context.Background(), tok)
 }
 
 // Request a token from the web, then returns the retrieved token.
-func saveTokenFromWeb(config *oauth2.Config, tokenPath string) {
+func saveTokenFromWeb(wg *sync.WaitGroup, config *oauth2.Config, tokenPath string) *http.Server {
 	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
 	fmt.Printf("🔐 OAuth 토큰이 필요합니다. 아래 링크에 접속해주세요."+
 		"\n%v\n", authURL)
-	openServerAndSaveToken(config, tokenPath)
+	return openServerAndSaveToken(wg, config, tokenPath)
 }
 
 func removeReadMail(srv *gmail.Service, user string, messageId string) {
