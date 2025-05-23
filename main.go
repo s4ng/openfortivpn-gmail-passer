@@ -175,7 +175,7 @@ func connectVpnWithEmailVerification() {
 	lastMsgDate := "N/A"
 
 	if err != nil {
-		if strings.Contains(err.Error(), "invalid_grant") {
+		if strings.Contains(err.Error(), "Error 401") || strings.Contains(err.Error(), "invalid_grant") {
 			removeTokenFile()
 			log.Fatalf("🚫 OAuth 토큰이 만료되었습니다. 다시 시도해주세요.")
 			return
@@ -216,9 +216,6 @@ func connectVpnWithEmailVerification() {
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("Failed to start command: %v", err)
 	}
-	// stdout/stderr 읽기
-	go io.Copy(os.Stdout, stdoutPipe)
-	go io.Copy(os.Stderr, stderrPipe)
 
 	// 시그널 처리
 	sigs := make(chan os.Signal, 1)
@@ -247,6 +244,9 @@ func connectVpnWithEmailVerification() {
 		defer stdin.Close()
 		io.WriteString(stdin, authCode+"\n")
 	}()
+	// stdout/stderr 읽기
+	go io.Copy(os.Stdout, stdoutPipe)
+	go io.Copy(os.Stderr, stderrPipe)
 
 	if err := cmd.Wait(); err != nil {
 		log.Printf("VPN process exited with error: %v", err)
